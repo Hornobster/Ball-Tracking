@@ -46,9 +46,11 @@ light = bpy.data.objects['Lamp']
 for x in range(10):
     # position light randomly around center
     light_dist = random.random() * 5 + 5 # light distance in range [5, 10]
-    light.location = ((math.sin(random.random() * 2 * math.pi) * light_dist, \
-                       math.sin(random.random() * 2 * math.pi) * light_dist, \
-                       math.sin(random.random() * 2 * math.pi) * light_dist))
+    light_longitude = random.random() * 2 * math.pi
+    light_latitude = random.random() * 2 * math.pi
+    light.location = ((math.sin(light_longitude) * light_dist, \
+                       math.cos(light_longitude) * light_dist, \
+                       math.sin(light_latitude) * light_dist))
     
     scene.render.filepath = './renders/image%d.png' % x
     bpy.ops.render.render(write_still = True)
