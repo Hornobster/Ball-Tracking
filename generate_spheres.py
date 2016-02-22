@@ -2,6 +2,7 @@
 import bpy
 import random
 import math
+import os
 
 # clean scene
 bpy.ops.object.select_by_type(type='MESH')
@@ -52,5 +53,7 @@ for x in range(10):
                        math.cos(light_longitude) * light_dist, \
                        math.sin(light_latitude) * light_dist))
     
-    scene.render.filepath = './renders/image%d.png' % x
+    # save rendering in the 'renders' folder of the current working directory
+    scene.render.filepath = os.path.join(os.getcwd(), './renders/image%d.png' % x)
     bpy.ops.render.render(write_still = True)
+
