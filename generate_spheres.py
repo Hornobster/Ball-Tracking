@@ -4,6 +4,11 @@ import random
 import math
 import os
 
+# create rendering output directory, if it doesn't exist
+spheresDir = os.path.join(os.getcwd(), './spheres')
+if not os.path.exists(spheresDir):
+     os.makedirs(spheresDir)
+
 # clean scene
 bpy.ops.object.select_by_type(type='MESH')
 bpy.ops.object.delete()
@@ -54,6 +59,6 @@ for x in range(10):
                        math.sin(light_latitude) * light_dist))
     
     # save rendering in the 'renders' folder of the current working directory
-    scene.render.filepath = os.path.join(os.getcwd(), './renders/image%d.png' % x)
+    scene.render.filepath = os.path.join(spheresDir, './image%d.png' % x)
     bpy.ops.render.render(write_still = True)
 
