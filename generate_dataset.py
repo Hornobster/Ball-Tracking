@@ -2,6 +2,7 @@
 import sys
 import os
 import random
+import math
 from PIL import Image
 
 # get all backgrounds filenames in 'backgrounds' directory
@@ -37,8 +38,12 @@ for x in range(10):
 
         # copy and resize patch from sphere and paste it into result
         spherePatch = sphere.crop((5, 5, 205, 205))
-        spherePatch = spherePatch.resize((50, 50))
-        result.paste(spherePatch, (25, 25, 75, 75), spherePatch) # the second spherePatch is used as alpha mask
+        sphereDiameter = int(random.random() * 90 + 10) # random integer value in [10, 100]
+        spherePatch = spherePatch.resize((sphereDiameter, sphereDiameter))
+        result.paste(spherePatch, \
+                     (50 - int(math.floor(sphereDiameter / 2.0)), 50 - int(math.floor(sphereDiameter / 2.0)), \
+                     50 + int(math.ceil(sphereDiameter / 2.0)), 50 + int(math.ceil(sphereDiameter / 2.0))), \
+                     spherePatch) # the second spherePatch is used as alpha mask
 
         # save result
         result.save(os.path.join(datasetDir, 'data%d.png' % x))
