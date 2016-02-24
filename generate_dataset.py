@@ -25,10 +25,6 @@ for x in range(10):
         bkgFilename = random.choice(bkgFilenames)
         background = Image.open(os.path.join(bkgDir, bkgFilename))
 
-        # choose a random sphere
-        sphereFilename = random.choice(spheresFilenames)
-        sphere = Image.open(os.path.join(spheresDir, sphereFilename))
-
         # create new greyscale image
         result = Image.new('L', (100, 100))
 
@@ -36,14 +32,20 @@ for x in range(10):
         bkgPatch = background.crop((0, 0, 100, 100))
         result.paste(bkgPatch, (0, 0, 100, 100))
 
-        # copy and resize patch from sphere and paste it into result
-        spherePatch = sphere.crop((5, 5, 205, 205))
-        sphereDiameter = int(random.random() * 90 + 10) # random integer value in [10, 100]
-        spherePatch = spherePatch.resize((sphereDiameter, sphereDiameter))
-        result.paste(spherePatch, \
-                     (50 - int(math.floor(sphereDiameter / 2.0)), 50 - int(math.floor(sphereDiameter / 2.0)), \
-                     50 + int(math.ceil(sphereDiameter / 2.0)), 50 + int(math.ceil(sphereDiameter / 2.0))), \
-                     spherePatch) # the second spherePatch is used as alpha mask
+        # with probability 50% add a sphere to the image
+        if random.random() < 0.5:
+            # choose a random sphere
+            sphereFilename = random.choice(spheresFilenames)
+            sphere = Image.open(os.path.join(spheresDir, sphereFilename))
+
+            # copy and resize patch from sphere and paste it into result
+            spherePatch = sphere.crop((5, 5, 205, 205))
+            sphereDiameter = int(random.random() * 90 + 10) # random integer value in [10, 100]
+            spherePatch = spherePatch.resize((sphereDiameter, sphereDiameter))
+            result.paste(spherePatch, \
+                         (50 - int(math.floor(sphereDiameter / 2.0)), 50 - int(math.floor(sphereDiameter / 2.0)), \
+                         50 + int(math.ceil(sphereDiameter / 2.0)), 50 + int(math.ceil(sphereDiameter / 2.0))), \
+                         spherePatch) # the second spherePatch is used as alpha mask
 
         # save result
         result.save(os.path.join(datasetDir, 'data%d.png' % x))
