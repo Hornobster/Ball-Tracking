@@ -38,8 +38,15 @@ for x in range(10):
         bkgPatch = background.crop((left, top, left + 100, top + 100))
         result.paste(bkgPatch, (50, 50, 150, 150))
 
+        # defaults, used when saving the HDF5 file
+        hasSphere = False
+        sphereDiameter = 1
+        sphereCenter = (0, 0)
+
         # with probability 50% add a sphere to the image
         if random.random() < 0.5:
+            hasSphere = True
+
             # choose a random sphere
             sphereFilename = random.choice(spheresFilenames)
             sphere = Image.open(os.path.join(spheresDir, sphereFilename))
@@ -61,10 +68,19 @@ for x in range(10):
         # save result to HDF5 DB
         dset = f.create_dataset('%03d' % x, (100, 100), dtype='uint8')
         dset[...] = np.array(result)
+
+        # set attributes for grayscale images
         dset.attrs['CLASS'] = np.str_('IMAGE')
         dset.attrs['VERSION'] = np.str_('1.2')
         dset.attrs['IMAGE_SUBCLASS'] = np.str_('IMAGE_GRAYSCALE')
         dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
+        
+        # save attributes for training
+        dset.attrs['HAS_SPHERE'] = hasSphere
+        if (hasSphere):
+            dset.attrs['RADIUS'] = sphereDiameter / 2
+            dset.attrs['CENTER_X'] = sphereCenter[0] - 50
+            dset.attrs['CENTER_Y'] = sphereCenter[1] - 50
     except IOError as e:
         print('I/O Error(%d): %s' % (e.errno, e.strerror))
 
