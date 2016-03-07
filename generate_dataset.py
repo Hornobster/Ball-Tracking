@@ -28,8 +28,14 @@ for x in range(10):
         # create new greyscale image
         result = Image.new('L', (200, 200))
 
+        # check that the background image is large enough
+        if (background.size[0] < 100 or background.size[1] < 100):
+            print('Warning: background must be at least 100x100px. %s skipped.' % bkgFilename)
+            continue
+
         # copy a 100x100px patch from background and paste it into result
-        bkgPatch = background.crop((0, 0, 100, 100))
+        left, top = int(random.random() * (background.size[0] - 100)), int(random.random() * (background.size[1] - 100))
+        bkgPatch = background.crop((left, top, left + 100, top + 100))
         result.paste(bkgPatch, (50, 50, 150, 150))
 
         # with probability 50% add a sphere to the image
