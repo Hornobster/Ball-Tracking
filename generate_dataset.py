@@ -4,6 +4,8 @@ import os
 import random
 import math
 from PIL import Image
+import numpy as np
+import h5py
 
 # get all backgrounds filenames in 'backgrounds' directory
 bkgDir = os.path.join(os.getcwd(), './backgrounds')
@@ -13,10 +15,8 @@ bkgFilenames = [f for f in os.listdir(bkgDir) if os.path.isfile(os.path.join(bkg
 spheresDir = os.path.join(os.getcwd(), './spheres')
 spheresFilenames = [f for f in os.listdir(spheresDir) if os.path.isfile(os.path.join(spheresDir, f))]
 
-# create 'dataset' directory, if it doesn't exist
-datasetDir = os.path.join(os.getcwd(), './dataset')
-if not os.path.exists(datasetDir):
-    os.makedirs(datasetDir)
+# create HDF5 file
+f = h5py.File('dataset.hdf5', 'w')
 
 # generate N dataset images
 for x in range(10):
@@ -58,8 +58,15 @@ for x in range(10):
         # crop to 100x100
         result = result.crop((50, 50, 150, 150))
 
-        # save result
-        result.save(os.path.join(datasetDir, 'data%d.png' % x))
+        # save result to HDF5 DB
+        dset = f.create_dataset('%03d' % x, (100, 100), dtype='uint8')
+        dset[...] = np.array(result)
+        dset.attrs['CLASS'] = np.str_('IMAGE')
+        dset.attrs['VERSION'] = np.str_('1.2')
+        dset.attrs['IMAGE_SUBCLASS'] = np.str_('IMAGE_GRAYSCALE')
+        dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
     except IOError as e:
         print('I/O Error(%d): %s' % (e.errno, e.strerror))
 
+f.flush()
+f.close()
