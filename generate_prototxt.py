@@ -9,7 +9,7 @@ import caffe
 
 from caffe import layers as L, params as P
 
-def lenet():
+def lenet(batch_size, phase):
     n = caffe.NetSpec()
 
     # empty layers as placeholders
@@ -24,13 +24,17 @@ def lenet():
     n.fc1   = L.InnerProduct(n.pool2, num_output=500, weight_filler=dict(type='xavier'))
     n.relu1 = L.ReLU(n.fc1, in_place=True)
     n.score = L.InnerProduct(n.relu1, num_output=2, weight_filler=dict(type='xavier'))
-    n.loss  = L.SoftmaxWithLoss(n.score, n.label)
+
+    if (phase == 'TRAIN'):
+        n.loss  = L.SoftmaxWithLoss(n.score, n.label)
+    else if (phase == 'TEST'):
+        n.prob = L.Softmax(n.score)
     
     return n.to_proto()
 
 with open('lenet_auto_train.prototxt', 'w') as f:
-    f.write(str(lenet()))
+    f.write(str(lenet(50, 'TRAIN')))
 
 with open('lenet_auto_test.prototxt', 'w') as f:
-    f.write(str(lenet()))
+    f.write(str(lenet(50, 'TEST')))
 
