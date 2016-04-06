@@ -50,8 +50,8 @@ def testNet(i, test_dataset, solver):
         solver.test_nets[0].blobs['data'].data[...] = d
         solver.test_nets[0].blobs['label'].data[...] = l
 
-        solver.test_nets[0].forward(start='conv1')
-        correct += sum(solver.test_nets[0].blobs['score'].data.argmax(1) == solver.test_nets[0].blobs['label'].data)
+        solver.test_nets[0].forward(start='conv1_1')
+        correct += sum(solver.test_nets[0].blobs['prob'].data.argmax(1) == solver.test_nets[0].blobs['label'].data)
         test_acc[i // test_interval] = correct / 1e3
     print(test_acc[i // test_interval])
 
@@ -71,8 +71,8 @@ for it in range(niter):
     # small test for first 8 images
     solver.test_nets[0].blobs['data'].data[...] = testData
     solver.test_nets[0].blobs['label'].data[...] = testLabel
-    solver.test_nets[0].forward(start='conv1')
-    output[it] = solver.test_nets[0].blobs['score'].data[:8]
+    solver.test_nets[0].forward(start='conv1_1')
+    output[it] = solver.test_nets[0].blobs['prob'].data[:8]
     
     if it % test_interval == 0:
         testNet(it, 'test_dataset.hdf5', solver)
@@ -80,10 +80,13 @@ for it in range(niter):
 # last test
 testNet(200, 'test_dataset.hdf5', solver)
 
+# save model
+solver.net.save('balltracker.caffemodel')
+
 # reload first test batch for plotting
 solver.test_nets[0].blobs['data'].data[...] = testData
 solver.test_nets[0].blobs['label'].data[...] = testLabel
-solver.test_nets[0].forward(start='conv1')
+solver.test_nets[0].forward(start='conv1_1')
 
 '''
 # plot scores over iterations for 8 test images
@@ -97,21 +100,30 @@ for i in range(8):
 plt.show()
 '''
 
+# plot conv2 layer gradients
+plt.imshow(solver.net.params['conv2_2'][0].diff[:, 0].reshape(8, 4, 3, 3)
+       .transpose(0, 2, 1, 3).reshape(8*4, 3*3), cmap='gray', interpolation='none')
+plt.show()
+
+# plot probs
+_, ax3 = plt.subplots()
+ax4 = ax3.twinx()
+ax3.plot(np.arange(len(hassphere_probs)), hassphere_probs)
+ax4.plot(np.arange(len(nosphere_probs)), nosphere_probs, 'r')
+ax3.set_ylabel('hassphere_probs')
+ax4.set_ylabel('nosphere_probs')
+plt.show()
+
 # plot softmax over iterations for 8 test images
-correct = ((solver.test_nets[0].blobs['score'].data.argmax(1)[:8] == solver.test_nets[0].blobs['label'].data[:8]))
+correct = ((solver.test_nets[0].blobs['prob'].data.argmax(1)[:8] == solver.test_nets[0].blobs['label'].data[:8]))
 print(sum(correct), '/', len(correct))
 for i in range(8):
     plt.figure(figsize=(2, 2))
     plt.imshow(solver.test_nets[0].blobs['data'].data[i, 0], cmap='gray')
     plt.figure(figsize=(10, 2))
-    plt.imshow(np.exp(output[195:200, i].T) / np.exp(output[195:200, i].T).sum(0), interpolation='nearest', cmap='gray')
+    plt.imshow(output[195:200, i].T, interpolation='nearest', cmap='gray')
     plt.xlabel('iteration')
     plt.ylabel('label')
-plt.show()
-
-# plot conv2 layer gradients
-plt.imshow(solver.net.params['conv2'][0].diff[:, 0].reshape(10, 5, 5, 5)
-       .transpose(0, 2, 1, 3).reshape(10*5, 5*5), cmap='gray', interpolation='none')
 plt.show()
 
 # plot trainloss and test accuracy over iterations
