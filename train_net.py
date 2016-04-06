@@ -40,10 +40,19 @@ output = np.zeros((niter, 8, 2))
 
 testData, testLabel = loadBatch('test_dataset.hdf5', 50, 0)
 
+# auroc statistics
+auroc_thresholds = np.linspace(0, 1, 50)
+auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32') # [ TP, FN, FP, TN ]
+
 # test the trained net over test_dataset
-def testNet(i, test_dataset, solver):
+def testNet(i, test_dataset, solver, auroc = False):
     print ('Iteration', i, 'testing...')
     correct = 0
+    
+    global auroc_thresholds
+    global auroc_stats
+    auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32')
+
     for test_it in range(20):
         # load new test batch
         d, l = loadBatch(test_dataset, 50, test_it)
@@ -53,8 +62,20 @@ def testNet(i, test_dataset, solver):
         solver.test_nets[0].forward(start='conv1_1')
         correct += sum(solver.test_nets[0].blobs['prob'].data.argmax(1) == solver.test_nets[0].blobs['label'].data)
         test_acc[i // test_interval] = correct / 1e3
-    print(test_acc[i // test_interval])
+        
+        if auroc:
+            for p in range(50):
+                for idx, threshold in enumerate(auroc_thresholds):
+                    if solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] > threshold):
+                        auroc_stats[idx][0] += 1
+                    elif solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] < threshold):
+                        auroc_stats[idx][1] += 1
+                    elif not solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] > threshold):
+                        auroc_stats[idx][2] += 1
+                    elif not solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] < threshold):
+                        auroc_stats[idx][3] += 1
 
+    print(test_acc[i // test_interval])
 
 # main training loop
 for it in range(niter):
@@ -78,10 +99,19 @@ for it in range(niter):
         testNet(it, 'test_dataset.hdf5', solver)
 
 # last test
-testNet(200, 'test_dataset.hdf5', solver)
-
+testNet(200, 'test_dataset.hdf5', solver, True)
+        
 # save model
 solver.net.save('balltracker.caffemodel')
+
+# plot auroc
+fpr = ((auroc_stats[:, 2]).astype(float) / (auroc_stats[:, 2] + auroc_stats[:, 3]))
+tpr = ((auroc_stats[:, 0]).astype(float) / (auroc_stats[:, 0] + auroc_stats[:, 1]))
+z = np.linspace(min(fpr), max(fpr))
+plt.plot(z, z, '--')
+plt.plot(fpr, tpr, 'r')
+plt.fill_between(fpr, tpr, 0, color='blue', alpha=0.3)
+plt.show()
 
 # reload first test batch for plotting
 solver.test_nets[0].blobs['data'].data[...] = testData
@@ -103,15 +133,6 @@ plt.show()
 # plot conv2 layer gradients
 plt.imshow(solver.net.params['conv2_2'][0].diff[:, 0].reshape(8, 4, 3, 3)
        .transpose(0, 2, 1, 3).reshape(8*4, 3*3), cmap='gray', interpolation='none')
-plt.show()
-
-# plot probs
-_, ax3 = plt.subplots()
-ax4 = ax3.twinx()
-ax3.plot(np.arange(len(hassphere_probs)), hassphere_probs)
-ax4.plot(np.arange(len(nosphere_probs)), nosphere_probs, 'r')
-ax3.set_ylabel('hassphere_probs')
-ax4.set_ylabel('nosphere_probs')
 plt.show()
 
 # plot softmax over iterations for 8 test images
