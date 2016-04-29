@@ -46,10 +46,13 @@ scene.render.resolution_y = 210
 scene.render.resolution_percentage = 100
 scene.render.alpha_mode = 'TRANSPARENT' # credit: http://blender.stackexchange.com/a/1307
 
-# get light
+# enable environment lighting
+bpy.data.worlds['World'].light_settings.use_environment_light = True
+
+# get lights
 light = bpy.data.objects['Lamp']
 
-for x in range(10):
+for x in range(10000):
     # position light randomly around center
     light_dist = random.random() * 5 + 5 # light distance in range [5, 10]
     light_longitude = random.random() * 2 * math.pi
@@ -57,7 +60,15 @@ for x in range(10):
     light.location = ((math.sin(light_longitude) * light_dist, \
                        math.cos(light_longitude) * light_dist, \
                        math.sin(light_latitude) * light_dist))
-    
+
+    ambient = random.gauss(0.125, 0.125)
+    if ambient < 0.0:
+        ambient = 0.0
+    if ambient > 1.0:
+        ambient = 1.0
+
+    bpy.data.worlds['World'].light_settings.environment_energy = ambient
+
     # save rendering in the 'renders' folder of the current working directory
     scene.render.filepath = os.path.join(spheresDir, './image%d.png' % x)
     bpy.ops.render.render(write_still = True)
