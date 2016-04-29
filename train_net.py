@@ -10,8 +10,17 @@ sys.path.insert(0, caffe_root + '/python')
 
 import caffe
 
-TRAIN_DATASET_FILENAME = 'train_dataset.hdf5'
-TEST_DATASET_FILENAME = 'train_dataset.hdf5'
+# define constants
+TRAIN_DATASET_FILENAME	= 'train_dataset.hdf5'
+TRAIN_MEAN_FILENAME	= 'train_dataset_mean.hdf5'
+TEST_DATASET_FILENAME	= 'test_dataset.hdf5'
+SOLVER_PROTO_FILENAME	= 'lenet_auto_solver.prototxt'
+MODEL_FILENAME		= 'balltracker.caffemodel'
+BATCH_SIZE		= 50
+NUM_TRAINING_ITERATIONS	= 200
+TEST_INTERVAL		= 25
+TEST_NUM_SAMPLES	= 1000
+FIRST_LAYER		= 'conv1_1'
 
 def loadBatch(hdf5, batch_size, n, mean = None):
     data_arr = np.zeros((batch_size, 1, 100, 100))
@@ -37,22 +46,20 @@ caffe.set_device(0)
 caffe.set_mode_gpu()
 
 solver = None
-solver = caffe.SGDSolver('lenet_auto_solver.prototxt')
+solver = caffe.SGDSolver(SOLVER_PROTO_FILENAME)
 
-niter = 200
-test_interval = 25
-train_loss = np.zeros(niter)
-test_acc = np.zeros(int(np.ceil(niter / test_interval) + 1))
-output = np.zeros((niter, 8, 2))
+train_loss = np.zeros(NUM_TRAINING_ITERATIONS)
+test_acc = np.zeros(int(np.ceil(NUM_TRAINING_ITERATIONS / TEST_INTERVAL) + 1))
+output = np.zeros((NUM_TRAINING_ITERATIONS, 8, 2))
 
-testData, testLabel = loadBatch(TEST_DATASET_FILENAME, 50, 0)
+testData, testLabel = loadBatch(TEST_DATASET_FILENAME, BATCH_SIZE, 0)
 
 # auroc statistics
-auroc_thresholds = np.linspace(0, 1, 50)
+auroc_thresholds = np.linspace(0, 1, BATCH_SIZE)
 auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32') # [ TP, FN, FP, TN ]
 
 # test the trained net over test_dataset
-def testNet(i, test_dataset, solver, auroc = False):
+def testNet(i, test_dataset, solver, numTestSamples, auroc = False):
     print ('Iteration', i, 'testing...')
     correct = 0
     
@@ -60,19 +67,18 @@ def testNet(i, test_dataset, solver, auroc = False):
     global auroc_stats
     auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32')
 
-    numTestSamples = 1000
-    for test_it in range(numTestSamples / 50):
+    for test_it in range(numTestSamples / BATCH_SIZE):
         # load new test batch
-        d, l = loadBatch(test_dataset, 50, test_it)
+        d, l = loadBatch(test_dataset, BATCH_SIZE, test_it)
         solver.test_nets[0].blobs['data'].data[...] = d
         solver.test_nets[0].blobs['label'].data[...] = l
 
-        solver.test_nets[0].forward(start='conv1_1')
+        solver.test_nets[0].forward(start=FIRST_LAYER)
         correct += sum(solver.test_nets[0].blobs['prob'].data.argmax(1) == solver.test_nets[0].blobs['label'].data)
-        test_acc[i // test_interval] = float(correct) / numTestSamples * 100.0
+        test_acc[i // TEST_INTERVAL] = float(correct) / numTestSamples * 100.0
         
         if auroc:
-            for p in range(50):
+            for p in range(BATCH_SIZE):
                 for idx, threshold in enumerate(auroc_thresholds):
                     if solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] > threshold):
                         auroc_stats[idx][0] += 1
@@ -83,18 +89,18 @@ def testNet(i, test_dataset, solver, auroc = False):
                     elif not solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] < threshold):
                         auroc_stats[idx][3] += 1
 
-    print(test_acc[i // test_interval])
+    print(test_acc[i // TEST_INTERVAL])
 
 # load mean
-meanHdf = h5py.File("train_dataset_mean.hdf5", "r")
+meanHdf = h5py.File(TRAIN_MEAN_FILENAME, 'r')
 mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
 mean[...] = meanHdf['mean'][...]
 meanHdf.close()
 
 # main training loop
-for it in range(niter):
+for it in range(NUM_TRAINING_ITERATIONS):
     # load batch
-    trainData, trainLabel = loadBatch(TRAIN_DATASET_FILENAME, 50, it, mean)
+    trainData, trainLabel = loadBatch(TRAIN_DATASET_FILENAME, BATCH_SIZE, it, mean)
 
     solver.net.blobs['data'].data[...] = trainData
     solver.net.blobs['label'].data[...] = trainLabel
@@ -106,17 +112,19 @@ for it in range(niter):
     # small test for first 8 images
     solver.test_nets[0].blobs['data'].data[...] = testData
     solver.test_nets[0].blobs['label'].data[...] = testLabel
-    solver.test_nets[0].forward(start='conv1_1')
+    solver.test_nets[0].forward(start=FIRST_LAYER)
     output[it] = solver.test_nets[0].blobs['prob'].data[:8]
     
-    if it % test_interval == 0:
-        testNet(it, TEST_DATASET_FILENAME, solver)
+    if it % TEST_INTERVAL == 0:
+        testNet(it, TEST_DATASET_FILENAME, solver, TEST_NUM_SAMPLES)
 
 # last test
-testNet(200, TEST_DATASET_FILENAME, solver, True)
+testNet(NUM_TRAINING_ITERATIONS, TEST_DATASET_FILENAME, solver, TEST_NUM_SAMPLES, True)
         
 # save model
-solver.net.save('balltracker.caffemodel')
+solver.net.save(MODEL_FILENAME)
+
+sys.exit(0)
 
 # plot auroc
 fpr = ((auroc_stats[:, 2]).astype(float) / (auroc_stats[:, 2] + auroc_stats[:, 3]))
@@ -130,7 +138,7 @@ plt.show()
 # reload first test batch for plotting
 solver.test_nets[0].blobs['data'].data[...] = testData
 solver.test_nets[0].blobs['label'].data[...] = testLabel
-solver.test_nets[0].forward(start='conv1_1')
+solver.test_nets[0].forward(start=FIRST_LAYER)
 
 '''
 # plot scores over iterations for 8 test images
@@ -138,16 +146,16 @@ for i in range(8):
     plt.figure(figsize=(2, 2))
     plt.imshow(solver.test_nets[0].blobs['data'].data[i, 0], cmap='gray')
     plt.figure(figsize=(10, 2))
-    plt.imshow(output[:200, i].T, interpolation='nearest', cmap='gray')
+    plt.imshow(output[:NUM_TRAINING_ITERATIONS, i].T, interpolation='nearest', cmap='gray')
     plt.xlabel('iteration')
     plt.ylabel('label')
 plt.show()
-'''
 
 # plot conv2 layer gradients
 plt.imshow(solver.net.params['conv2_2'][0].diff[:, 0].reshape(8, 4, 3, 3)
        .transpose(0, 2, 1, 3).reshape(8*4, 3*3), cmap='gray', interpolation='none')
 plt.show()
+'''
 
 # plot softmax over iterations for 8 test images
 correct = ((solver.test_nets[0].blobs['prob'].data.argmax(1)[:8] == solver.test_nets[0].blobs['label'].data[:8]))
@@ -156,7 +164,7 @@ for i in range(8):
     plt.figure(figsize=(2, 2))
     plt.imshow(solver.test_nets[0].blobs['data'].data[i, 0], cmap='gray')
     plt.figure(figsize=(10, 2))
-    plt.imshow(output[195:200, i].T, interpolation='nearest', cmap='gray')
+    plt.imshow(output[NUM_TRAINING_ITERATIONS-5:NUM_TRAINING_ITERATIONS, i].T, interpolation='nearest', cmap='gray')
     plt.xlabel('iteration')
     plt.ylabel('label')
 plt.show()
@@ -164,8 +172,8 @@ plt.show()
 # plot trainloss and test accuracy over iterations
 _, ax1 = plt.subplots()
 ax2 = ax1.twinx()
-ax1.plot(np.arange(niter), train_loss)
-ax2.plot(test_interval * np.arange(len(test_acc)), test_acc, 'r')
+ax1.plot(np.arange(NUM_TRAINING_ITERATIONS), train_loss)
+ax2.plot(TEST_INTERVAL * np.arange(len(test_acc)), test_acc, 'r')
 ax1.set_xlabel('iteration')
 ax1.set_ylabel('train loss')
 ax2.set_ylabel('test accuracy')
