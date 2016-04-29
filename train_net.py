@@ -10,7 +10,10 @@ sys.path.insert(0, caffe_root + '/python')
 
 import caffe
 
-def loadBatch(hdf5, batch_size, n):
+TRAIN_DATASET_FILENAME = 'train_dataset.hdf5'
+TEST_DATASET_FILENAME = 'train_dataset.hdf5'
+
+def loadBatch(hdf5, batch_size, n, mean = None):
     data_arr = np.zeros((batch_size, 1, 100, 100))
     label_arr = np.zeros((batch_size))
     f = h5py.File(hdf5, "r")
@@ -22,6 +25,10 @@ def loadBatch(hdf5, batch_size, n):
         label_arr[idx] = np.int32(f[i].attrs['HAS_SPHERE'])
     
     data_arr /= 256.0 # transform to [0, 1)
+    
+    # subtract mean
+    if mean is not None:
+        data_arr[:, 0, ...] -= mean
 
     return data_arr, label_arr
 
@@ -38,7 +45,7 @@ train_loss = np.zeros(niter)
 test_acc = np.zeros(int(np.ceil(niter / test_interval) + 1))
 output = np.zeros((niter, 8, 2))
 
-testData, testLabel = loadBatch('test_dataset.hdf5', 50, 0)
+testData, testLabel = loadBatch(TEST_DATASET_FILENAME, 50, 0)
 
 # auroc statistics
 auroc_thresholds = np.linspace(0, 1, 50)
@@ -53,7 +60,8 @@ def testNet(i, test_dataset, solver, auroc = False):
     global auroc_stats
     auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32')
 
-    for test_it in range(20):
+    numTestSamples = 1000
+    for test_it in range(numTestSamples / 50):
         # load new test batch
         d, l = loadBatch(test_dataset, 50, test_it)
         solver.test_nets[0].blobs['data'].data[...] = d
@@ -61,7 +69,7 @@ def testNet(i, test_dataset, solver, auroc = False):
 
         solver.test_nets[0].forward(start='conv1_1')
         correct += sum(solver.test_nets[0].blobs['prob'].data.argmax(1) == solver.test_nets[0].blobs['label'].data)
-        test_acc[i // test_interval] = correct / 1e3
+        test_acc[i // test_interval] = float(correct) / numTestSamples * 100.0
         
         if auroc:
             for p in range(50):
@@ -77,10 +85,16 @@ def testNet(i, test_dataset, solver, auroc = False):
 
     print(test_acc[i // test_interval])
 
+# load mean
+meanHdf = h5py.File("train_dataset_mean.hdf5", "r")
+mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
+mean[...] = meanHdf['mean'][...]
+meanHdf.close()
+
 # main training loop
 for it in range(niter):
     # load batch
-    trainData, trainLabel = loadBatch('train_dataset.hdf5', 50, it)
+    trainData, trainLabel = loadBatch(TRAIN_DATASET_FILENAME, 50, it, mean)
 
     solver.net.blobs['data'].data[...] = trainData
     solver.net.blobs['label'].data[...] = trainLabel
@@ -96,10 +110,10 @@ for it in range(niter):
     output[it] = solver.test_nets[0].blobs['prob'].data[:8]
     
     if it % test_interval == 0:
-        testNet(it, 'test_dataset.hdf5', solver)
+        testNet(it, TEST_DATASET_FILENAME, solver)
 
 # last test
-testNet(200, 'test_dataset.hdf5', solver, True)
+testNet(200, TEST_DATASET_FILENAME, solver, True)
         
 # save model
 solver.net.save('balltracker.caffemodel')
