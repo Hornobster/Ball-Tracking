@@ -3,7 +3,7 @@ import sys
 import os
 import random
 import math
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import h5py
 
@@ -15,11 +15,21 @@ bkgFilenames = [f for f in os.listdir(bkgDir) if os.path.isfile(os.path.join(bkg
 spheresDir = os.path.join(os.getcwd(), './spheres')
 spheresFilenames = [f for f in os.listdir(spheresDir) if os.path.isfile(os.path.join(spheresDir, f))]
 
-# create HDF5 file
-f = h5py.File('dataset.hdf5', 'w')
+# create HDF5 file for dataset
+f = h5py.File('train_dataset.hdf5', 'w')
+
+# create HDF5 file for mean
+meanHdf = h5py.File('train_dataset_mean.hdf5', 'w')
+
+# prepare mean matrix
+datasetMean = np.zeros((100, 100), dtype='double')
 
 # generate N dataset images
-for x in range(10):
+N = 10000
+x = 0
+while x < N:
+    if x % 1000 == 0:
+        print('%d / %d %f%%' % (x, N, float(x) / N * 100))
     try:
         # choose a random background
         bkgFilename = random.choice(bkgFilenames)
@@ -30,7 +40,9 @@ for x in range(10):
 
         # check that the background image is large enough
         if (background.size[0] < 100 or background.size[1] < 100):
-            print('Warning: background must be at least 100x100px. %s skipped.' % bkgFilename)
+            print('Warning: background must be at least 100x100px. %s deleted.' % bkgFilename)
+            os.remove(os.path.join(bkgDir, bkgFilename))
+            bkgFilenames.remove(bkgFilename)
             continue
 
         # copy a 100x100px patch from background and paste it into result
@@ -52,22 +64,40 @@ for x in range(10):
             sphere = Image.open(os.path.join(spheresDir, sphereFilename))
 
             # copy and resize patch from sphere and paste it into result
-            spherePatch = sphere.crop((5, 5, 205, 205))
             sphereDiameter = int(random.random() * 90 + 10) # random integer value in [10, 100]
             sphereCenter = (random.random() * 100 + 50, random.random() * 100 + 50)
-            spherePatch = spherePatch.resize((sphereDiameter, sphereDiameter))
+            sphere= sphere.resize((sphereDiameter, sphereDiameter))
             pasteBox = (int(sphereCenter[0] - math.floor(sphereDiameter / 2.0)), int(sphereCenter[1] - math.floor(sphereDiameter / 2.0)), \
                         int(sphereCenter[0] + math.ceil(sphereDiameter / 2.0)), int(sphereCenter[1] + math.ceil(sphereDiameter / 2.0))) 
-            result.paste(spherePatch, \
+
+            # random brightness
+            sphereEnhanced = sphere.convert('RGB')
+            enhancer = ImageEnhance.Brightness(sphereEnhanced)
+            sphereEnhanced = enhancer.enhance(random.random() + 0.5)
+            
+            # random blur
+            blur = ImageFilter.GaussianBlur(int(random.random() * sphereDiameter / 20))
+            sphereEnhanced = sphereEnhanced.filter(blur)
+            blurredAlpha = sphere.split()[-1].filter(blur)
+            sphere.putalpha(blurredAlpha)
+
+            result.paste(sphereEnhanced, \
                          pasteBox,
-                         spherePatch) # the second spherePatch is used as alpha mask
+                         sphere) # the second sphere is used as alpha mask
 
         # crop to 100x100
         result = result.crop((50, 50, 150, 150))
 
+        # random brightness
+        enhancer = ImageEnhance.Brightness(result)
+        result = enhancer.enhance(random.random() + 0.5)
+
         # save result to HDF5 DB
-        dset = f.create_dataset('%03d' % x, (100, 100), dtype='uint8')
+        dset = f.create_dataset('%07d' % x, (100, 100), dtype='uint8')
         dset[...] = np.array(result)
+        
+        # update mean
+        datasetMean += dset[...].astype('double') / N
 
         # set attributes for grayscale images
         dset.attrs['CLASS'] = np.str_('IMAGE')
@@ -83,6 +113,20 @@ for x in range(10):
             dset.attrs['CENTER_Y'] = sphereCenter[1] - 50
     except IOError as e:
         print('I/O Error(%d): %s' % (e.errno, e.strerror))
+    x += 1
 
+# save mean to HDF5 DB
+dset = meanHdf.create_dataset('mean', (100, 100), dtype='double')
+dset[...] = datasetMean / 256.0
+
+# set attributes for grayscale images
+dset.attrs['CLASS'] = np.str_('IMAGE')
+dset.attrs['VERSION'] = np.str_('1.2')
+dset.attrs['IMAGE_SUBCLASS'] = np.str_('IMAGE_GRAYSCALE')
+dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
+
+# release resources
 f.flush()
 f.close()
+meanHdf.flush()
+meanHdf.close()
