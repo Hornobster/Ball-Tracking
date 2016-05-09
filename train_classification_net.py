@@ -14,13 +14,13 @@ TRAIN_DATASET_DIR       = os.path.join(os.getcwd(), './train_dataset')
 TEST_DATASET_DIR        = os.path.join(os.getcwd(), './test_dataset')
 BATCH_FILENAME_FORMAT	= 'dataset_batch%d.hdf5'
 DATASET_MEAN_FILENAME	= 'dataset_mean.hdf5'
-SOLVER_PROTO_FILENAME	= 'lenet_auto_solver.prototxt'
+SOLVER_PROTO_FILENAME	= 'lenet_classification_solver.prototxt'
 MODEL_FILENAME		= 'balltracker.caffemodel'
 BATCH_SIZE		= 100
 NUM_TRAINING_ITERATIONS	= 100
 TEST_INTERVAL		= 25
 TEST_NUM_SAMPLES	= 1000
-FIRST_LAYER		= 'conv1_1'
+FIRST_LAYER		= 'conv1'
 
 def loadBatch(datasetDir, batch_size, n, mean = None):
     data_arr = np.zeros((batch_size, 1, 100, 100))
@@ -40,6 +40,8 @@ def loadBatch(datasetDir, batch_size, n, mean = None):
     # subtract mean
     if mean is not None:
         data_arr[:, 0, ...] -= mean
+
+    f.close()
 
     return data_arr, label_arr
 
@@ -125,8 +127,6 @@ testNet(NUM_TRAINING_ITERATIONS, TEST_DATASET_DIR, solver, TEST_NUM_SAMPLES, Tru
         
 # save model
 solver.net.save(MODEL_FILENAME)
-
-sys.exit(0)
 
 # plot auroc
 fpr = ((auroc_stats[:, 2]).astype(float) / (auroc_stats[:, 2] + auroc_stats[:, 3]))
