@@ -4,6 +4,7 @@ import os
 import sys
 import h5py
 import matplotlib.pyplot as plt
+from PIL import Image, ImageChops
 
 caffe_root = os.getenv('CAFFE_ROOT', './')
 sys.path.insert(0, caffe_root + '/python')
@@ -50,9 +51,18 @@ for x in range(50):
         print('%d / 2500' % (x * 50 + batch * 50))
         heatmap[x,...] = 1.0 - net.blobs['prob'].data[...,1]
 
+import matplotlib
+cmap_heatmap = heatmap - np.min(heatmap[np.nonzero(heatmap)])
+cmap_heatmap = cmap_heatmap.astype(np.float32) / np.max(cmap_heatmap)
+cmap_heatmap = matplotlib.cm.jet(cmap_heatmap, bytes=True)
+cmap_heatmap = Image.fromarray(cmap_heatmap)
+colored = ImageChops.multiply(Image.fromarray(actual_image * 256).resize((50, 50)).convert('RGBA'), cmap_heatmap)
+
 plt.figure()
 plt.imshow(actual_image, cmap='gray')
 plt.figure()
 plt.imshow(heatmap)
+plt.figure()
+plt.imshow(colored) 
 plt.show()
 
