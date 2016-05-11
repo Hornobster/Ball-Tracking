@@ -6,12 +6,8 @@ import h5py
 import matplotlib.pyplot as plt
 from PIL import Image, ImageChops, ImageDraw
 
-caffe_root = os.getenv('CAFFE_ROOT', './')
-sys.path.insert(0, caffe_root + '/python')
 
-import caffe
-
-def analyse_frame(net, model, image, batch_size, patch_size, interval):
+def analyse(net, model, image, batch_size, patch_size, interval):
     # open the image and convert to array
     image = image.convert('L');
     image_array = np.array(image) / 256.0 # normalize to [0, 1)
@@ -119,6 +115,11 @@ def analyse_frame(net, model, image, batch_size, patch_size, interval):
     
 # if the script is called from command line and not imported
 if __name__ == '__main__':
+    caffe_root = os.getenv('CAFFE_ROOT', './')
+    sys.path.insert(0, caffe_root + '/python')
+
+    import caffe
+
     # setup solver
     caffe.set_device(0)
     caffe.set_mode_gpu()
@@ -136,7 +137,7 @@ if __name__ == '__main__':
     patch_size = 100
     batch_size = 100
 
-    found, max_prob, max_prob_x, max_prob_y = analyse_frame(net, model, image, batch_size, patch_size, interval)
+    found, max_prob, max_prob_x, max_prob_y = analyse(net, model, image, batch_size, patch_size, interval)
 
     if found: 
 	# draw rectangle around solution
