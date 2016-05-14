@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageChops, ImageDraw
 
 
-def analyse(net, model, image, batch_size, patch_size, interval):
+def analyse(classifier, regressor, image, batch_size, patch_size, interval):
     # open the image and convert to array
     image = image.convert('L');
     image_array = np.array(image) / 256.0 # normalize to [0, 1)
@@ -28,25 +28,24 @@ def analyse(net, model, image, batch_size, patch_size, interval):
 
     # main loop
     for batch in range(num_batches):
-	net.blobs['data'].data[:] = 0 # zero out the matrix
+	classifier.blobs['data'].data[:] = 0 # zero out the matrix
 
 	# load patches
 	index = 0;
 	for row in range(rows_per_batch):
 	    h = batch * rows_per_batch + row
 	    for w in range(steps_w):
-		net.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
-
+		classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
 		index += 1
 	    # last column
-	    net.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
+	    classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
 
 	    index += 1
 
 	# inference
-	net.forward()
-	max_prob_idx = net.blobs['prob'].data[:, 1].argmax(0)
-	m_prob = net.blobs['prob'].data[max_prob_idx, 1]
+	classifier.forward()
+	max_prob_idx = classifier.blobs['prob'].data[:, 1].argmax(0)
+	m_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
 
 	# update max probability
 	if m_prob >= 0.5 and m_prob > max_prob:
@@ -65,28 +64,29 @@ def analyse(net, model, image, batch_size, patch_size, interval):
 		max_prob_y = tmp_h * interval
 
     # last batch has less than rows_per_batch rows
-    remaining_rows = ((image_h - patch_size) - (num_batches * rows_per_batch + 1) * interval) / interval + 1
+    remaining_rows = ((image_h - patch_size) - (num_batches * rows_per_batch * interval)) / interval + 1
 
-    net.blobs['data'].data[:] = 0 # zero out the matrix
+    classifier.blobs['data'].data[:] = 0 # zero out the matrix
     index = 0
     for row in range(remaining_rows):
-	h = num_batches * rows_per_batch + row + 1
+	h = num_batches * rows_per_batch + row
 	for w in range(steps_w):
-	    net.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
+	    classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
 	    index += 1
-	net.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
+	classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
+
 	index += 1
 
     # last row
     for w in range(steps_w):
-	net.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, w * interval:w * interval + patch_size]
+	classifier.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, w * interval:w * interval + patch_size]
 	index += 1
-    net.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, image_w - patch_size:image_w]
+    classifier.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, image_w - patch_size:image_w]
 
     # inference
-    net.forward()
-    max_prob_idx = net.blobs['prob'].data[:, 1].argmax(0)
-    m_prob = net.blobs['prob'].data[max_prob_idx, 1]
+    classifier.forward()
+    max_prob_idx = classifier.blobs['prob'].data[:, 1].argmax(0)
+    m_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
 
     # update max probability
     if m_prob > max_prob:
@@ -104,14 +104,23 @@ def analyse(net, model, image, batch_size, patch_size, interval):
 	    else:
 		max_prob_x = image_w - patch_size
 		max_prob_y = image_h - patch_size
-	if tmp_w != steps_w:
+	elif tmp_w != steps_w:
 	    max_prob_x = tmp_w * interval
 	    max_prob_y = tmp_h * interval
 	else:
 	    max_prob_x = image_w - patch_size
 	    max_prob_y = tmp_h * interval
 
-    return (found, max_prob, max_prob_x, max_prob_y)
+    center_x = 0.0
+    center_y = 0.0
+    radius = 0.0
+
+    if found:
+        regressor.blobs['data'].data[0, 0, ...] = image_array[max_prob_y:max_prob_y + patch_size, max_prob_x:max_prob_x + patch_size]
+        regressor.forward()
+        center_x, center_y, radius = regressor.blobs['score'].data[0] * 100.0
+
+    return (found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
     
 # if the script is called from command line and not imported
 if __name__ == '__main__':
@@ -125,10 +134,11 @@ if __name__ == '__main__':
     caffe.set_mode_gpu()
 
     # get console arguments
-    netdescriptor, model, imageFilename = sys.argv[1], sys.argv[2], sys.argv[3]
+    classifierDescriptor, regressorDescriptor, classifierModel, regressorModel, imageFilename = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 
-    # load model
-    net = caffe.Net(netdescriptor, model, caffe.TEST)
+    # load models
+    classifier = caffe.Net(classifierDescriptor, classifierModel, caffe.TEST)
+    regressor = caffe.Net(regressorDescriptor, regressorModel, caffe.TEST)
 
     # open the image and convert to array
     image = Image.open(imageFilename).convert('L');
@@ -137,7 +147,7 @@ if __name__ == '__main__':
     patch_size = 100
     batch_size = 100
 
-    found, max_prob, max_prob_x, max_prob_y = analyse(net, model, image, batch_size, patch_size, interval)
+    found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = analyse(classifier, regressor, image, batch_size, patch_size, interval)
 
     if found: 
 	# draw rectangle around solution
@@ -148,6 +158,10 @@ if __name__ == '__main__':
 	draw.rectangle([(max_prob_x, max_prob_y), (max_prob_x + patch_size, max_prob_y + patch_size)], outline='red')
 	draw.rectangle([(max_prob_x + 1, max_prob_y + 1), (max_prob_x + patch_size - 1, max_prob_y + patch_size - 1)], outline='red')
 	draw.rectangle([(max_prob_x + 2, max_prob_y + 2), (max_prob_x + patch_size - 2, max_prob_y + patch_size - 2)], outline='red')
+
+        draw.ellipse([max_prob_x + center_x - radius, max_prob_y + center_y - radius, max_prob_x + center_x + radius, max_prob_y + center_y + radius], outline='red')
+        draw.ellipse([max_prob_x + center_x - radius - 1, max_prob_y + center_y - radius - 1, max_prob_x + center_x + radius + 1, max_prob_y + center_y + radius + 1], outline='red')
+        draw.ellipse([max_prob_x + center_x - radius - 2, max_prob_y + center_y - radius - 2, max_prob_x + center_x + radius + 2, max_prob_y + center_y + radius + 2], outline='red')
 
 	plt.imshow(image_color)
 	plt.show()
