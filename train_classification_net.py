@@ -32,8 +32,9 @@ def loadBatch(datasetDir, batch_size, n, mean = None):
     images = f.keys()
     
     for idx, i in enumerate(images):
-        data_arr[idx, 0, ...] = f[i][...]
-        label_arr[idx] = np.int32(f[i].attrs['HAS_SPHERE'])
+        if idx < batch_size:
+            data_arr[idx, 0, ...] = f[i][...]
+            label_arr[idx] = np.int32(f[i].attrs['HAS_SPHERE'])
     
     data_arr /= 256.0 # transform to [0, 1)
     

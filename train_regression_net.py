@@ -32,8 +32,9 @@ def loadBatch(datasetDir, batch_size, n, mean = None):
     images = f.keys()
     
     for idx, i in enumerate(images):
-        data_arr[idx, 0, ...] = f[i][...]
-        label_arr[idx, ...] = [f[i].attrs['CENTER_X'], f[i].attrs['CENTER_Y'] , f[i].attrs['RADIUS']]
+        if idx < batch_size:
+            data_arr[idx, 0, ...] = f[i][...]
+            label_arr[idx, ...] = [f[i].attrs['CENTER_X'], f[i].attrs['CENTER_Y'] , f[i].attrs['RADIUS']]
     
     data_arr /= 256.0 # transform to [0, 1)
     label_arr /= 100.0 # transform to [0, 1]
