@@ -85,13 +85,15 @@ def testNet(i, test_dataset_dir, solver, numTestSamples, auroc = False):
         if auroc:
             for p in range(BATCH_SIZE):
                 for idx, threshold in enumerate(auroc_thresholds):
-                    if solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] > threshold):
+                    label = int(solver.test_nets[0].blobs['label'].data[p])
+                    predicted = solver.test_nets[0].blobs['prob'].data[p][1]
+                    if label == 1 and (predicted > threshold): # true positive
                         auroc_stats[idx][0] += 1
-                    elif solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] < threshold):
+                    elif label == 1 and (predicted < threshold): # false negative
                         auroc_stats[idx][1] += 1
-                    elif not solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] > threshold):
+                    elif label == 0 and (predicted > threshold): # false positive
                         auroc_stats[idx][2] += 1
-                    elif not solver.test_nets[0].blobs['label'].data[p] and (solver.test_nets[0].blobs['prob'].data[p][1] < threshold):
+                    elif label == 0 and (predicted < threshold): # true negative
                         auroc_stats[idx][3] += 1
 
     print(test_acc[i // TEST_INTERVAL])
