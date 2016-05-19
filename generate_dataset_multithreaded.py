@@ -94,7 +94,7 @@ class Worker (threading.Thread):
                 sphereCenter = (0, 0)
 
                 # with probability 50% add a sphere to the image
-                if True:
+                if random.random() < 0.5:
                     hasSphere = True
 
                     # choose a random sphere
