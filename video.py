@@ -83,8 +83,16 @@ write_command = [FFMPEG_BIN,
 inPipe = sp.Popen(read_command, stdout = sp.PIPE, stderr=sp.PIPE, bufsize = 10**8)
 outPipe = sp.Popen(write_command, stdin = sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
 
-# frame counter
+# costants
+interval = 25
+patch_size = 100
+batch_size = 100
+
+# loop variables
 f = 0
+old_x = 0
+old_y = 0
+found = False
 
 done = False
 while not done:
@@ -99,14 +107,23 @@ while not done:
         image_color = Image.fromarray(image_color)
 
         image = image_color.convert('L')
+        
+        # if we haven't found anything last frame, run full-frame analysis
+        # else run analysis around the old position
+        if not found:
+            found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
+        else:
+            found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, interval, old_x, old_y)
 
-        interval = 25
-        patch_size = 100
-        batch_size = 100
-
-        found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
+            # if local search hasn't found anything, run full-frame analysis
+            if not found:
+                found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
 
         if found: 
+            # update variables for next frame
+            old_x = max_prob_x
+            old_y = max_prob_y
+
             # draw rectangle around solution
             draw = ImageDraw.Draw(image_color)
 
@@ -122,11 +139,13 @@ while not done:
         else:
             print ("No ball found!\n")
         
+        # write to output pipe
         outPipe.stdin.write(image_color.tostring())
 
         inPipe.stdout.flush()
         outPipe.stdin.flush()
     else:
+        # input is finished, close pipes
         inPipe.terminate()
         outPipe.terminate()
         done = True
