@@ -89,7 +89,7 @@ def analyse(classifier, regressor, image, batch_size, patch_size, interval):
     m_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
 
     # update max probability
-    if m_prob > max_prob:
+    if m_prob >= 0.5 and m_prob > max_prob:
 	found = True
 	max_prob = m_prob
 
