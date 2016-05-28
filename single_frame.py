@@ -4,6 +4,7 @@ import os
 import sys
 import h5py
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from PIL import Image, ImageChops, ImageDraw
 
 def analyse(classifier, regressor, image, batch_size, patch_size, interval):
@@ -207,6 +208,93 @@ def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, int
 
     return (found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
 
+def probabilityMap(classifier, image, batch_size, patch_size, interval):
+    # open the image and convert to array
+    image = image.convert('L');
+
+    # calculate variables for the for loops
+    image_w = image.size[0]
+    image_h = image.size[1]
+
+    # if frame is smaller than classifier's patch
+    # return "not found"
+    if image_w < patch_size and image_h < patch_size:
+        print ('Frame is smaller than classifier\'s patch! Frame: %dx%d Patch: %dx%d' % (image_w, image_h, patch_size, patch_size))
+        return None
+
+    # zero out the matrix
+    classifier.blobs['data'].data[:] = 0
+
+    # compute image padding
+    if interval * (image_w / interval) == image_w:
+        padded_w = image_w
+    else:
+        padded_w = interval * (image_w / interval + 1)
+
+    if interval * (image_h / interval) == image_h:
+        padded_h = image_h
+    else:
+        padded_h = interval * (image_h / interval + 1)
+
+    # only pad image if needed
+    if image_w != padded_w or image_h != padded_h:
+        image_padded = Image.new('L', (padded_w, padded_h))
+        image_padded.paste(image, ((padded_w - image_w) / 2, (padded_h - image_h) / 2))
+    else:
+        image_padded = image
+
+    image_array = np.array(image_padded) / 256.0 # normalize to [0, 1)
+
+    # loop variables
+    prob_row = (padded_h - patch_size) / interval + 1
+    prob_col = (padded_w - patch_size) / interval + 1
+
+    probs = np.zeros((prob_row * prob_col), dtype='float')
+    prob_idx = 0
+
+    index = 0
+    for row in range(0, padded_h - patch_size + interval, interval):
+        for col in range(0, padded_w - patch_size + interval, interval):
+            classifier.blobs['data'].data[index, 0, ...] = image_array[row:row + patch_size, col:col + patch_size]
+
+            index += 1
+
+            # once batch is filled, calculate probabilities with the classifier
+            if index == batch_size:
+                # inference
+                classifier.forward()
+
+                probs[prob_idx:prob_idx + batch_size] = classifier.blobs['prob'].data[:, 1]
+
+                # update indexes
+                index = 0
+                prob_idx += batch_size
+
+    # inference for last batch
+    if index > 0:
+        classifier.forward()
+
+        probs[prob_idx:] = classifier.blobs['prob'].data[:index, 1]
+
+    probs = probs.reshape((prob_row, prob_col))
+
+    # initialise probability map to zero
+    probabilityMap = np.zeros(image_array.shape, dtype='float')
+    probabilityMapCounters = np.zeros(image_array.shape, dtype='uint8')
+
+    for row in range(0, prob_row):
+        for col in range(0, prob_col):
+            probabilityMap[row * interval:row * interval + patch_size, col * interval:col * interval + patch_size] += probs[row, col]
+            probabilityMapCounters[row * interval:row * interval + patch_size, col * interval:col * interval + patch_size] += 1
+
+    # compute average per pixel
+    probabilityMap /= probabilityMapCounters
+
+    # crop
+    probabilityMap = probabilityMap[(padded_h - image_h) / 2:(padded_h - image_h) / 2 + image_h, (padded_w - image_w) / 2:(padded_w - image_w) / 2 + image_w]
+
+    return probabilityMap
+
 # if the script is called from command line and not imported
 if __name__ == '__main__':
     caffe_root = os.getenv('CAFFE_ROOT', './')
@@ -228,16 +316,21 @@ if __name__ == '__main__':
     # open the image and convert to array
     image = Image.open(imageFilename).convert('L');
 
+    image_color = image.convert('RGB')
+
     interval = 25
     patch_size = 100
     batch_size = 100
 
+    # compose original image with computed probability map
+    probMap = probabilityMap(classifier, image, batch_size, patch_size, interval)
+    image_color = ImageChops.multiply(image_color, Image.fromarray(np.uint8(cm.jet(probMap, bytes=True))).convert('RGB'))
+
+    # compute max probability patch
     found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = analyse(classifier, regressor, image, batch_size, patch_size, interval)
 
+    # draw rectangle around solution
     if found: 
-	# draw rectangle around solution
-	image_color = image.convert('RGB')
-
 	draw = ImageDraw.Draw(image_color)
 
 	draw.rectangle([(max_prob_x, max_prob_y), (max_prob_x + patch_size, max_prob_y + patch_size)], outline='red')
@@ -247,8 +340,9 @@ if __name__ == '__main__':
         draw.ellipse([max_prob_x + center_x - radius, max_prob_y + center_y - radius, max_prob_x + center_x + radius, max_prob_y + center_y + radius], outline='red')
         draw.ellipse([max_prob_x + center_x - radius - 1, max_prob_y + center_y - radius - 1, max_prob_x + center_x + radius + 1, max_prob_y + center_y + radius + 1], outline='red')
         draw.ellipse([max_prob_x + center_x - radius - 2, max_prob_y + center_y - radius - 2, max_prob_x + center_x + radius + 2, max_prob_y + center_y + radius + 2], outline='red')
-
-	plt.imshow(image_color)
-	plt.show()
     else:
 	print ("No ball found!")
+
+    plt.imshow(image_color)
+    plt.show()
+
