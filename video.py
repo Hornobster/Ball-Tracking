@@ -3,10 +3,11 @@ import single_frame as frame
 import subprocess as sp
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import os
 import sys
 import json
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 caffe_root = os.getenv('CAFFE_ROOT', './')
 sys.path.insert(0, caffe_root + '/python')
@@ -37,8 +38,9 @@ def getVideoInfo(filename):
     n_frames = int(infos['nb_frames'])
 
     # if video is rotated, swap width and height
-    if infos['tags']['rotate'] == '90' or infos['tags']['rotate'] == '-90':
-        width, height = height, width
+    if 'tags' in infos and 'rotate' in infos['tags']:
+        if infos['tags']['rotate'] == '90' or infos['tags']['rotate'] == '-90':
+            width, height = height, width
 
     print (errors)
 
@@ -87,6 +89,7 @@ outPipe = sp.Popen(write_command, stdin = sp.PIPE, stdout=sp.PIPE, stderr=sp.PIP
 interval = 25
 patch_size = 100
 batch_size = 100
+draw_prob_map = False
 
 # loop variables
 f = 0
@@ -108,16 +111,22 @@ while not done:
 
         image = image_color.convert('L')
         
-        # if we haven't found anything last frame, run full-frame analysis
-        # else run analysis around the old position
-        if not found:
-            found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
-        else:
-            found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, interval, old_x, old_y)
+        if draw_prob_map:
+            found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
 
-            # if local search hasn't found anything, run full-frame analysis
+            # compose original image with computed probability map
+            image_color = ImageChops.multiply(image_color, Image.fromarray(np.uint8(cm.jet(probMap, bytes=True))).convert('RGB'))
+        else:
+            # if we haven't found anything last frame, run full-frame analysis
+            # else run analysis around the old position
             if not found:
-                found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
+                found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
+            else:
+                found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, interval, old_x, old_y)
+
+                # if local search hasn't found anything, run full-frame analysis
+                if not found:
+                    found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = frame.analyse(classifier, regressor, image, batch_size, patch_size, interval)
 
         if found: 
             # update variables for next frame
@@ -138,7 +147,7 @@ while not done:
             draw.ellipse([max_prob_x + center_x - radius - 2, max_prob_y + center_y - radius - 2, max_prob_x + center_x + radius + 2, max_prob_y + center_y + radius + 2], outline='red')
         else:
             print ("No ball found!\n")
-        
+
         # write to output pipe
         outPipe.stdin.write(image_color.tostring())
 

@@ -16,101 +16,79 @@ def analyse(classifier, regressor, image, batch_size, patch_size, interval):
     image_w = image.size[0]
     image_h = image.size[1]
 
-    steps_w = (image_w - patch_size) / interval + 1
-    rows_per_batch = batch_size / (steps_w + 1) # add 1 to account for the possible last patch in each row, not counted by steps_w
-    num_batches = (image_h - patch_size) / (rows_per_batch * interval)
+    # if frame is smaller than classifier's patch
+    # return "not found"
+    if image_w < patch_size and image_h < patch_size:
+        print ('Frame is smaller than classifier\'s patch! Frame: %dx%d Patch: %dx%d' % (image_w, image_h, patch_size, patch_size))
+        return None
 
-    # max probability of sphere
-    found = False
+    # compute image padding
+    if interval * (image_w / interval) == image_w:
+        padded_w = image_w
+    else:
+        padded_w = interval * (image_w / interval + 1)
+
+    if interval * (image_h / interval) == image_h:
+        padded_h = image_h
+    else:
+        padded_h = interval * (image_h / interval + 1)
+
+    # only pad image if needed
+    if image_w != padded_w or image_h != padded_h:
+        image_padded = Image.new('L', (padded_w, padded_h))
+        image_padded.paste(image, ((padded_w - image_w) / 2, (padded_h - image_h) / 2))
+    else:
+        image_padded = image
+
+    image_padded_array = np.array(image_padded) / 256.0 # normalize to [0, 1)
+
+    # compute probability map
+    probMap = probabilityMap(classifier, image_padded_array, batch_size, patch_size, interval)
+
+    # find max probability patch
     max_prob = 0.0
+    max_prob_mean = 0.0
     max_prob_x = 0
     max_prob_y = 0
 
-    # main loop
-    for batch in range(num_batches):
-	classifier.blobs['data'].data[:] = 0 # zero out the matrix
+    found = False
+    for row in range(0, padded_h - patch_size + interval, interval):
+        for col in range(0, padded_w - patch_size + interval, interval):
+            tmp_max = np.max(probMap[row:row + patch_size, col:col + patch_size])
 
-	# load patches
-	index = 0;
-	for row in range(rows_per_batch):
-	    h = batch * rows_per_batch + row
-	    for w in range(steps_w):
-		classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
-		index += 1
-	    # last column
-	    classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
+            if tmp_max > max_prob and tmp_max > 0.5:
+                found = True
 
-	    index += 1
+                max_prob = tmp_max
+                max_prob_mean = np.mean(probMap[row:row + patch_size, col:col + patch_size])
+                max_prob_x = col - (padded_w - image_w) / 2 # realign with original image
+                max_prob_y = row - (padded_h - image_h) / 2 # realign with original image
+            elif tmp_max == max_prob:
+                tmp_mean = np.mean(probMap[row:row + patch_size, col:col + patch_size])
 
-	# inference
-	classifier.forward()
-	max_prob_idx = classifier.blobs['prob'].data[:, 1].argmax(0)
-	m_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
+                if tmp_mean > max_prob_mean:
+                    found = True
 
-	# update max probability
-	if m_prob >= 0.5 and m_prob > max_prob:
-	    found = True
-	    max_prob = m_prob
+                    max_prob = tmp_max
+                    max_prob_mean = tmp_mean
+                    max_prob_x = col - (padded_w - image_w) / 2 # realign with original image
+                    max_prob_y = row - (padded_h - image_h) / 2 # realign with original image
 
-	    tmp_row = max_prob_idx / (steps_w + 1)
-	    tmp_w = max_prob_idx % (steps_w + 1)
-	    tmp_h = batch * rows_per_batch + tmp_row
-	
-	    if tmp_w != steps_w:
-		max_prob_x = tmp_w * interval
-		max_prob_y = tmp_h * interval
-	    else:
-		max_prob_x = image_w - patch_size
-		max_prob_y = tmp_h * interval
+    max_prob_x = max(max_prob_x, 0)
+    max_prob_y = max(max_prob_y, 0)
 
-    # last batch has less than rows_per_batch rows
-    remaining_rows = ((image_h - patch_size) - (num_batches * rows_per_batch * interval)) / interval + 1
+    x2 = min(image_w, max_prob_x + patch_size)
+    if x2 - patch_size != max_prob_x:
+        max_prob_x = x2 - patch_size
 
-    classifier.blobs['data'].data[:] = 0 # zero out the matrix
-    index = 0
-    for row in range(remaining_rows):
-	h = num_batches * rows_per_batch + row
-	for w in range(steps_w):
-	    classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, w * interval:w * interval + patch_size]
-	    index += 1
-	classifier.blobs['data'].data[index, 0, ...] = image_array[h * interval:h * interval + patch_size, image_w - patch_size:image_w]
+    y2 = min(image_h, max_prob_y + patch_size)
+    if y2 - patch_size != max_prob_y:
+        max_prob_y = y2 - patch_size
 
-	index += 1
+    # crop probability map to original image size
+    probMap = probMap[(padded_h - image_h) / 2:(padded_h - image_h) / 2 + image_h, (padded_w - image_w) / 2:(padded_w - image_w) / 2 + image_w]
 
-    # last row
-    for w in range(steps_w):
-	classifier.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, w * interval:w * interval + patch_size]
-	index += 1
-    classifier.blobs['data'].data[index, 0, ...] = image_array[image_h - patch_size:image_h, image_w - patch_size:image_w]
-
-    # inference
-    classifier.forward()
-    max_prob_idx = classifier.blobs['prob'].data[:, 1].argmax(0)
-    m_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
-
-    # update max probability
-    if m_prob >= 0.5 and m_prob > max_prob:
-	found = True
-	max_prob = m_prob
-
-	tmp_row = max_prob_idx / (steps_w + 1)
-	tmp_w = max_prob_idx % (steps_w + 1)
-	tmp_h = num_batches * rows_per_batch + tmp_row + 1
-
-	if tmp_row == remaining_rows:
-	    if tmp_w != steps_w:
-		max_prob_x = tmp_w * interval
-		max_prob_y = image_h - patch_size
-	    else:
-		max_prob_x = image_w - patch_size
-		max_prob_y = image_h - patch_size
-	elif tmp_w != steps_w:
-	    max_prob_x = tmp_w * interval
-	    max_prob_y = tmp_h * interval
-	else:
-	    max_prob_x = image_w - patch_size
-	    max_prob_y = tmp_h * interval
-
+    # variables for regression
     center_x = 0.0
     center_y = 0.0
     radius = 0.0
@@ -120,11 +98,9 @@ def analyse(classifier, regressor, image, batch_size, patch_size, interval):
         regressor.forward()
         center_x, center_y, radius = regressor.blobs['score'].data[0] * 100.0
 
-    return (found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
-    
-def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, interval, old_x, old_y):
-    assert (batch_size >= 9), "analyseAroundPoint: batch_size must be 9 or greater!"
+    return (found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
 
+def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, interval, old_x, old_y):
     # open the image and convert to array
     image = image.convert('L');
     image_array = np.array(image) / 256.0 # normalize to [0, 1)
@@ -141,6 +117,10 @@ def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, int
 
     # zero out the matrix
     classifier.blobs['data'].data[:] = 0
+
+    # initialise probability map to zero
+    probMap = np.zeros(image_array.shape, dtype='float')
+    probMapCounters = np.zeros(image_array.shape, dtype='uint8')
 
     # analyse a 3x3 grid around old_x, old_y
     # the middle cell goes from old_x, old_y to old_x + patch_size, old_y + patch_size
@@ -164,37 +144,83 @@ def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, int
             index = row * 3 + col;
             classifier.blobs['data'].data[index, 0, ...] = image_array[y1:y2, x1:x2]
 
+    # inference
+    classifier.forward()
+
+    # compute probability map
+    for idx, prob in enumerate(classifier.blobs['prob'].data[:9, 1]):
+	tmp_row = idx / 3
+        tmp_col = idx % 3
+        
+        # compute x1, x2
+        x1 = max(0, old_x + interval * (tmp_col - 1))
+        x2 = min(image_w, x1 + patch_size)
+
+        if x2 - patch_size != x1:
+            x1 = x2 - patch_size
+
+        # compute y1, y2
+        y1 = max(0, old_y + interval * (tmp_row - 1))
+        y2 = min(image_h, y1 + patch_size)
+
+        if y2 - patch_size != y1:
+            y1 = y2 - patch_size
+
+        probMap[y1:y2, x1:x2] += prob
+        probMapCounters[y1:y2, x1:x2] += 1
+
+    # compute mean
+    # since a lot of counters will be zero, ignore the division by zero error and put 1 as result
+    # credit: http://stackoverflow.com/a/35696047/2811496
+    with np.errstate(divide='ignore', invalid='ignore'):
+        probMap = np.true_divide( probMap, probMapCounters )
+        probMap[ ~ np.isfinite( probMap )] = np.min(classifier.blobs['prob'].data[:9, 1])  # -inf inf NaN
+
     # max probability of sphere
     found = False
     max_prob = 0.0
+    max_prob_mean = 0.0
     max_prob_x = 0
     max_prob_y = 0
 
-    # inference
-    classifier.forward()
-    max_prob_idx = classifier.blobs['prob'].data[:, 1].argmax(0)
-    max_prob = classifier.blobs['prob'].data[max_prob_idx, 1]
-
-    # update max probability, if prob > 50% and valid index
-    if max_prob_idx < 9 and max_prob >= 0.5:
-	found = True
-
-	tmp_row = max_prob_idx / 3
-        tmp_col = max_prob_idx % 3
-
+    # find max probability patch
+    for idx in range(9):
+	tmp_row = idx / 3
+        tmp_col = idx % 3
+        
         # compute x1, x2
-        max_prob_x = max(0, old_x + interval * (tmp_col - 1))
-        x2 = min(image_w, max_prob_x + patch_size)
+        x1 = max(0, old_x + interval * (tmp_col - 1))
+        x2 = min(image_w, x1 + patch_size)
 
-        if x2 - patch_size != max_prob_x:
-            max_prob_x = x2 - patch_size
+        if x2 - patch_size != x1:
+            x1 = x2 - patch_size
 
         # compute y1, y2
-        max_prob_y = max(0, old_y + interval * (tmp_row - 1))
-        y2 = min(image_h, max_prob_y + patch_size)
+        y1 = max(0, old_y + interval * (tmp_row - 1))
+        y2 = min(image_h, y1 + patch_size)
 
-        if y2 - patch_size != max_prob_y:
-            max_prob_y = y2 - patch_size
+        if y2 - patch_size != y1:
+            y1 = y2 - patch_size
+
+        tmp_max = np.max(probMap[y1:y2, x1:x2])
+
+        if tmp_max > max_prob and tmp_max > 0.5:
+            found = True
+
+            max_prob = tmp_max
+            max_prob_mean = np.mean(probMap[y1:y2, x1:x2])
+            max_prob_x = x1
+            max_prob_y = y1
+        elif tmp_max == max_prob:
+            tmp_mean = np.mean(probMap[y1:y2, x1:x2])
+
+            if tmp_mean > max_prob_mean:
+                found = True
+
+                max_prob = tmp_max
+                max_prob_mean = tmp_mean
+                max_prob_x = x1
+                max_prob_y = y1
 
     # variables for regression
     center_x = 0.0
@@ -206,44 +232,14 @@ def analyseAroundPoint(classifier, regressor, image, batch_size, patch_size, int
         regressor.forward()
         center_x, center_y, radius = regressor.blobs['score'].data[0] * 100.0
 
-    return (found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
-
-def probabilityMap(classifier, image, batch_size, patch_size, interval):
-    # open the image and convert to array
-    image = image.convert('L');
-
-    # calculate variables for the for loops
-    image_w = image.size[0]
-    image_h = image.size[1]
-
-    # if frame is smaller than classifier's patch
-    # return "not found"
-    if image_w < patch_size and image_h < patch_size:
-        print ('Frame is smaller than classifier\'s patch! Frame: %dx%d Patch: %dx%d' % (image_w, image_h, patch_size, patch_size))
-        return None
-
+    return (found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius)
+    
+def probabilityMap(classifier, image_array, batch_size, patch_size, interval):
     # zero out the matrix
     classifier.blobs['data'].data[:] = 0
 
-    # compute image padding
-    if interval * (image_w / interval) == image_w:
-        padded_w = image_w
-    else:
-        padded_w = interval * (image_w / interval + 1)
-
-    if interval * (image_h / interval) == image_h:
-        padded_h = image_h
-    else:
-        padded_h = interval * (image_h / interval + 1)
-
-    # only pad image if needed
-    if image_w != padded_w or image_h != padded_h:
-        image_padded = Image.new('L', (padded_w, padded_h))
-        image_padded.paste(image, ((padded_w - image_w) / 2, (padded_h - image_h) / 2))
-    else:
-        image_padded = image
-
-    image_array = np.array(image_padded) / 256.0 # normalize to [0, 1)
+    padded_h = image_array.shape[0]
+    padded_w = image_array.shape[1]
 
     # loop variables
     prob_row = (padded_h - patch_size) / interval + 1
@@ -290,9 +286,6 @@ def probabilityMap(classifier, image, batch_size, patch_size, interval):
     # compute average per pixel
     probabilityMap /= probabilityMapCounters
 
-    # crop
-    probabilityMap = probabilityMap[(padded_h - image_h) / 2:(padded_h - image_h) / 2 + image_h, (padded_w - image_w) / 2:(padded_w - image_w) / 2 + image_w]
-
     return probabilityMap
 
 # if the script is called from command line and not imported
@@ -322,12 +315,11 @@ if __name__ == '__main__':
     patch_size = 100
     batch_size = 100
 
-    # compose original image with computed probability map
-    probMap = probabilityMap(classifier, image, batch_size, patch_size, interval)
-    image_color = ImageChops.multiply(image_color, Image.fromarray(np.uint8(cm.jet(probMap, bytes=True))).convert('RGB'))
-
     # compute max probability patch
-    found, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = analyse(classifier, regressor, image, batch_size, patch_size, interval)
+    found, probMap, max_prob, max_prob_x, max_prob_y, center_x, center_y, radius = analyse(classifier, regressor, image, batch_size, patch_size, interval)
+
+    # compose original image with computed probability map
+    image_color = ImageChops.multiply(image_color, Image.fromarray(np.uint8(cm.jet(probMap, bytes=True))).convert('RGB'))
 
     # draw rectangle around solution
     if found: 
