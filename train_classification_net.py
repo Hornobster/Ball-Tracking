@@ -54,6 +54,7 @@ solver = None
 solver = caffe.SGDSolver(SOLVER_PROTO_FILENAME)
 
 train_loss = np.zeros(NUM_TRAINING_ITERATIONS)
+train_loss_averaged = []
 test_acc = np.zeros(int(np.ceil(NUM_TRAINING_ITERATIONS / TEST_INTERVAL) + 1))
 output = np.zeros((NUM_TRAINING_ITERATIONS, 8, 2))
 
@@ -104,6 +105,9 @@ mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
 mean[...] = meanHdf['mean'][...]
 meanHdf.close()
 
+moving_window = 100
+tmp_loss_average = 0.0
+
 # main training loop
 for it in range(NUM_TRAINING_ITERATIONS):
     # load batch
@@ -115,6 +119,12 @@ for it in range(NUM_TRAINING_ITERATIONS):
     solver.step(1)
 
     train_loss[it] = solver.net.blobs['loss'].data
+
+    # compute moving average of training loss
+    tmp_loss_average += train_loss[it] / moving_window
+    if (it + 1) % moving_window == 0:
+        train_loss_averaged.append(tmp_loss_average)
+        tmp_loss_average = 0.0
     
     # small test for first 8 images
     solver.test_nets[0].blobs['data'].data[...] = testData
@@ -178,6 +188,7 @@ plt.show()
 _, ax1 = plt.subplots()
 ax2 = ax1.twinx()
 ax1.plot(np.arange(NUM_TRAINING_ITERATIONS), train_loss)
+ax1.plot(np.arange(moving_window / 2, NUM_TRAINING_ITERATIONS + moving_window / 2, moving_window), train_loss_averaged, 'y', linewidth=2)
 ax2.plot(TEST_INTERVAL * np.arange(len(test_acc)), test_acc, 'r')
 ax1.set_xlabel('iteration')
 ax1.set_ylabel('train loss')
