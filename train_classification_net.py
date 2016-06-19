@@ -10,16 +10,16 @@ sys.path.insert(0, caffe_root + '/python')
 
 import caffe
 
-TRAIN_DATASET_DIR       = os.path.join(os.getcwd(), './train_dataset')
-TEST_DATASET_DIR        = os.path.join(os.getcwd(), './test_dataset')
+TRAIN_DATASET_DIR       = os.path.join(os.getcwd(), './train_dataset_classification_500K_100batch')
+TEST_DATASET_DIR        = os.path.join(os.getcwd(), './test_dataset_classification_200K_100batch')
 BATCH_FILENAME_FORMAT	= 'dataset_batch%d.hdf5'
 DATASET_MEAN_FILENAME	= 'dataset_mean.hdf5'
 SOLVER_PROTO_FILENAME	= 'lenet_classification_solver.prototxt'
-MODEL_FILENAME		= 'balltracker.caffemodel'
+MODEL_FILENAME		= 'balltracker_classification.caffemodel'
 BATCH_SIZE		= 100
-NUM_TRAINING_ITERATIONS	= 100
-TEST_INTERVAL		= 25
-TEST_NUM_SAMPLES	= 1000
+NUM_TRAINING_ITERATIONS	= 5000
+TEST_INTERVAL		= 200
+TEST_NUM_SAMPLES	= 10000
 FIRST_LAYER		= 'conv1'
 
 def loadBatch(datasetDir, batch_size, n, mean = None):
@@ -31,12 +31,13 @@ def loadBatch(datasetDir, batch_size, n, mean = None):
     
     images = f.keys()
     
+    # load arrays from HDF5 file
     for idx, i in enumerate(images):
         if idx < batch_size:
             data_arr[idx, 0, ...] = f[i][...]
             label_arr[idx] = np.int32(f[i].attrs['HAS_SPHERE'])
     
-    data_arr /= 256.0 # transform to [0, 1)
+    data_arr /= 256.0 # normalize to [0, 1)
     
     # subtract mean
     if mean is not None:
@@ -66,7 +67,7 @@ auroc_stats = np.zeros((len(auroc_thresholds), 4), dtype='uint32') # [ TP, FN, F
 
 # test the trained net over test_dataset
 def testNet(i, test_dataset_dir, solver, numTestSamples, auroc = False):
-    print ('Iteration', i, 'testing...')
+    print ('Iteration %d testing...' % i)
     correct = 0
     
     global auroc_thresholds
@@ -97,7 +98,7 @@ def testNet(i, test_dataset_dir, solver, numTestSamples, auroc = False):
                     elif label == 0 and (predicted < threshold): # true negative
                         auroc_stats[idx][3] += 1
 
-    print(test_acc[i // TEST_INTERVAL])
+    print('Test accuracy: %f' % test_acc[i // TEST_INTERVAL])
 
 # load mean
 meanHdf = h5py.File(os.path.join(TRAIN_DATASET_DIR, DATASET_MEAN_FILENAME), 'r')
@@ -105,7 +106,7 @@ mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
 mean[...] = meanHdf['mean'][...]
 meanHdf.close()
 
-moving_window = 100
+moving_window = NUM_TRAINING_ITERATIONS / 50
 tmp_loss_average = 0.0
 
 # main training loop
@@ -116,6 +117,7 @@ for it in range(NUM_TRAINING_ITERATIONS):
     solver.net.blobs['data'].data[...] = trainData
     solver.net.blobs['label'].data[...] = trainLabel
 
+    # update weights
     solver.step(1)
 
     train_loss[it] = solver.net.blobs['loss'].data
@@ -125,12 +127,6 @@ for it in range(NUM_TRAINING_ITERATIONS):
     if (it + 1) % moving_window == 0:
         train_loss_averaged.append(tmp_loss_average)
         tmp_loss_average = 0.0
-    
-    # small test for first 8 images
-    solver.test_nets[0].blobs['data'].data[...] = testData
-    solver.test_nets[0].blobs['label'].data[...] = testLabel
-    solver.test_nets[0].forward(start=FIRST_LAYER)
-    output[it] = solver.test_nets[0].blobs['prob'].data[:8]
     
     if it % TEST_INTERVAL == 0:
         testNet(it, TEST_DATASET_DIR, solver, TEST_NUM_SAMPLES)
@@ -148,40 +144,6 @@ z = np.linspace(min(fpr), max(fpr))
 plt.plot(z, z, '--')
 plt.plot(fpr, tpr, 'r')
 plt.fill_between(fpr, tpr, 0, color='blue', alpha=0.3)
-plt.show()
-
-# reload first test batch for plotting
-solver.test_nets[0].blobs['data'].data[...] = testData
-solver.test_nets[0].blobs['label'].data[...] = testLabel
-solver.test_nets[0].forward(start=FIRST_LAYER)
-
-'''
-# plot scores over iterations for 8 test images
-for i in range(8):
-    plt.figure(figsize=(2, 2))
-    plt.imshow(solver.test_nets[0].blobs['data'].data[i, 0], cmap='gray')
-    plt.figure(figsize=(10, 2))
-    plt.imshow(output[:NUM_TRAINING_ITERATIONS, i].T, interpolation='nearest', cmap='gray')
-    plt.xlabel('iteration')
-    plt.ylabel('label')
-plt.show()
-
-# plot conv2 layer gradients
-plt.imshow(solver.net.params['conv2_2'][0].diff[:, 0].reshape(8, 4, 3, 3)
-       .transpose(0, 2, 1, 3).reshape(8*4, 3*3), cmap='gray', interpolation='none')
-plt.show()
-'''
-
-# plot softmax over iterations for 8 test images
-correct = ((solver.test_nets[0].blobs['prob'].data.argmax(1)[:8] == solver.test_nets[0].blobs['label'].data[:8]))
-print(sum(correct), '/', len(correct))
-for i in range(8):
-    plt.figure(figsize=(2, 2))
-    plt.imshow(solver.test_nets[0].blobs['data'].data[i, 0], cmap='gray')
-    plt.figure(figsize=(10, 2))
-    plt.imshow(output[NUM_TRAINING_ITERATIONS-5:NUM_TRAINING_ITERATIONS, i].T, interpolation='nearest', cmap='gray')
-    plt.xlabel('iteration')
-    plt.ylabel('label')
 plt.show()
 
 # plot trainloss and test accuracy over iterations
