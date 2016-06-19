@@ -7,6 +7,12 @@ from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import h5py
 
+if len(sys.argv) != 5:
+    print('Usage: %s datasetDir numSamples batchSize sphereProbability' % sys.argv[0])
+    sys.exit(1)
+
+datasetDir, N, BATCH_SIZE, probability = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
+
 # get all backgrounds filenames in 'backgrounds' directory
 bkgDir = os.path.join(os.getcwd(), './backgrounds')
 bkgFilenames = [f for f in os.listdir(bkgDir) if os.path.isfile(os.path.join(bkgDir, f))]
@@ -16,7 +22,7 @@ spheresDir = os.path.join(os.getcwd(), './spheres')
 spheresFilenames = [f for f in os.listdir(spheresDir) if os.path.isfile(os.path.join(spheresDir, f))]
 
 # create directory for dataset, if it doesn't exist
-datasetDir = os.path.join(os.getcwd(), './dataset')
+datasetDir = os.path.join(os.getcwd(), datasetDir)
 if not os.path.exists(datasetDir):
      os.makedirs(datasetDir)
 
@@ -25,10 +31,6 @@ meanHdf = h5py.File(os.path.join(datasetDir, './dataset_mean.hdf5'), 'w')
 
 # prepare mean matrix
 datasetMean = np.zeros((100, 100), dtype='double')
-
-# generate N dataset images
-N = 10000
-BATCH_SIZE = 100
 
 numBatches = N / BATCH_SIZE
 
@@ -68,7 +70,7 @@ while batch < numBatches:
             sphereCenter = (0, 0)
 
             # with probability 50% add a sphere to the image
-            if random.random() < 0.5:
+            if random.random() < probability:
                 hasSphere = True
 
                 # choose a random sphere
@@ -147,3 +149,4 @@ dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
 # release resources
 meanHdf.flush()
 meanHdf.close()
+
