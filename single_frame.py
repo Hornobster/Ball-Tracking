@@ -290,6 +290,11 @@ def probabilityMap(classifier, image_array, batch_size, patch_size, interval):
 
 # if the script is called from command line and not imported
 if __name__ == '__main__':
+    # check command line arguments
+    if len(sys.argv) != 6:
+        print ("Usage: %s classifierDescriptor regressorDescriptor classifierModel regressorModel inputFilename" % sys.argv[0])
+        sys.exit(1)
+
     caffe_root = os.getenv('CAFFE_ROOT', './')
     sys.path.insert(0, caffe_root + '/python')
 
