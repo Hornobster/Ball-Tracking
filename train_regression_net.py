@@ -10,16 +10,16 @@ sys.path.insert(0, caffe_root + '/python')
 
 import caffe
 
-TRAIN_DATASET_DIR       = os.path.join(os.getcwd(), './train_dataset')
-TEST_DATASET_DIR        = os.path.join(os.getcwd(), './test_dataset')
+TRAIN_DATASET_DIR       = os.path.join(os.getcwd(), './train_dataset_regression_500K_100batch')
+TEST_DATASET_DIR        = os.path.join(os.getcwd(), './test_dataset_regression_200K_100batch')
 BATCH_FILENAME_FORMAT	= 'dataset_batch%d.hdf5'
 DATASET_MEAN_FILENAME	= 'dataset_mean.hdf5'
 SOLVER_PROTO_FILENAME	= 'lenet_regression_solver.prototxt'
 MODEL_FILENAME		= 'balltracker_regression.caffemodel'
 BATCH_SIZE		= 100
-NUM_TRAINING_ITERATIONS	= 500
-TEST_INTERVAL		= 25
-TEST_NUM_SAMPLES	= 1000
+NUM_TRAINING_ITERATIONS	= 5000
+TEST_INTERVAL		= 200
+TEST_NUM_SAMPLES	= 10000
 FIRST_LAYER		= 'conv1'
 
 def loadBatch(datasetDir, batch_size, n, mean = None):
@@ -31,6 +31,7 @@ def loadBatch(datasetDir, batch_size, n, mean = None):
     
     images = f.keys()
     
+    # load arrays from HDF5
     for idx, i in enumerate(images):
         if idx < batch_size:
             data_arr[idx, 0, ...] = f[i][...]
@@ -54,6 +55,7 @@ caffe.set_mode_gpu()
 solver = None
 solver = caffe.SGDSolver(SOLVER_PROTO_FILENAME)
 
+# initialise statistics array
 train_loss = np.zeros(NUM_TRAINING_ITERATIONS)
 train_loss_averaged = []
 test_rmse = np.zeros((int(np.ceil(NUM_TRAINING_ITERATIONS / TEST_INTERVAL) + 1), 3))
@@ -64,7 +66,7 @@ testData, testLabel = loadBatch(TEST_DATASET_DIR, BATCH_SIZE, 0)
 
 # test the trained net over test_dataset
 def testNet(i, test_dataset_dir, solver, numTestSamples):
-    print ('Iteration', i, 'testing...')
+    print ('Iteration %d testing...' % i)
 
     mean_squared_error = np.zeros((3), dtype='float')
     mean_squared_error_dummy = np.zeros((3), dtype='float')
@@ -102,7 +104,7 @@ mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
 mean[...] = meanHdf['mean'][...]
 meanHdf.close()
 
-moving_window = 100
+moving_window = NUM_TRAINING_ITERATIONS / 50
 tmp_loss_average = 0.0
 
 # main training loop
