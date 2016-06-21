@@ -25,6 +25,11 @@ PATH=${CUDA_HOME}/bin:${PATH}
 export PATH
 ```
 * Caffe framework (http://caffe.berkeleyvision.org/install_apt.html)
+After installation, be sure to set the caffe root environment variable in `.bashrc`:
+```
+CAFFE_ROOT=<path to CAFFE>
+export CAFFE_ROOT
+```
 * HDF5_Py - `sudo apt-get install libhdf5-dev python-h5py`
 * Blender - `sudo apt-get install blender`
 * FFmpeg - `sudo apt-get install ffmpeg`
