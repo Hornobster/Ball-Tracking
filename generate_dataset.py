@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import sys
 import os
 import random
@@ -120,11 +120,11 @@ while batch < numBatches:
             dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
             
             # save attributes for training
-            dset.attrs['HAS_SPHERE'] = hasSphere
+            dset.attrs['HAS_SPHERE'] = np.uint8(hasSphere)
             if (hasSphere):
-                dset.attrs['RADIUS'] = sphereDiameter / 2
-                dset.attrs['CENTER_X'] = sphereCenter[0] - 50
-                dset.attrs['CENTER_Y'] = sphereCenter[1] - 50
+                dset.attrs['RADIUS'] = np.float(sphereDiameter / 2)
+                dset.attrs['CENTER_X'] = np.float(sphereCenter[0] - 50)
+                dset.attrs['CENTER_Y'] = np.float(sphereCenter[1] - 50)
         except IOError as e:
             print('I/O Error(%d): %s' % (e.errno, e.strerror))
             

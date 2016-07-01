@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import sys
 import os
 import random
@@ -136,7 +136,7 @@ class Worker (threading.Thread):
                 # save result to HDF5 DB
                 dset = f.create_dataset('%07d' % x, (100, 100), dtype='uint8')
                 dset[...] = np.array(result)
-                
+
                 # update mean
                 batchMean += dset[...].astype('double') / N
 
@@ -147,11 +147,11 @@ class Worker (threading.Thread):
                 dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
                 
                 # save attributes for training
-                dset.attrs['HAS_SPHERE'] = hasSphere
+                dset.attrs['HAS_SPHERE'] = np.uint8(hasSphere)
                 if (hasSphere):
-                    dset.attrs['RADIUS'] = sphereDiameter / 2
-                    dset.attrs['CENTER_X'] = sphereCenter[0] - 50
-                    dset.attrs['CENTER_Y'] = sphereCenter[1] - 50
+                    dset.attrs['RADIUS'] = np.float(sphereDiameter / 2)
+                    dset.attrs['CENTER_X'] = np.float(sphereCenter[0] - 50)
+                    dset.attrs['CENTER_Y'] = np.float(sphereCenter[1] - 50)
             except IOError as e:
                 print('I/O Error(%d): %s' % (e.errno, e.strerror))
                 
@@ -207,11 +207,12 @@ while batch < numBatches and not quitSignal:
 
     batchFinishCondition.release()
 
-# wait for all workers to finish
-batchFinishCondition.acquire()
-while batchFinished < numBatches:
-    batchFinishCondition.wait()
-batchFinishCondition.release()
+# join all remaining threads
+main_thread = threading.current_thread()
+for t in threading.enumerate():
+    if t is main_thread:
+        continue
+    t.join()
 
 # save mean to HDF5 DB
 dset = meanHdf.create_dataset('mean', (100, 100), dtype='double')
