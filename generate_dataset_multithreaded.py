@@ -141,9 +141,9 @@ class Worker (threading.Thread):
                 batchMean += dset[...].astype('double') / N
 
                 # set attributes for grayscale images
-                dset.attrs['CLASS'] = np.str_('IMAGE')
-                dset.attrs['VERSION'] = np.str_('1.2')
-                dset.attrs['IMAGE_SUBCLASS'] = np.str_('IMAGE_GRAYSCALE')
+                dset.attrs['CLASS'] = 'IMAGE'
+                dset.attrs['VERSION'] = '1.2'
+                dset.attrs['IMAGE_SUBCLASS'] = 'IMAGE_GRAYSCALE'
                 dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
                 
                 # save attributes for training
@@ -219,9 +219,9 @@ dset = meanHdf.create_dataset('mean', (100, 100), dtype='double')
 dset[...] = datasetMean / 256.0
 
 # set attributes for grayscale images
-dset.attrs['CLASS'] = np.str_('IMAGE')
-dset.attrs['VERSION'] = np.str_('1.2')
-dset.attrs['IMAGE_SUBCLASS'] = np.str_('IMAGE_GRAYSCALE')
+dset.attrs['CLASS'] = 'IMAGE'
+dset.attrs['VERSION'] = '1.2'
+dset.attrs['IMAGE_SUBCLASS'] = 'IMAGE_GRAYSCALE'
 dset.attrs['IMAGE_WHITE_IS_ZERO'] = np.uint8(0)
 
 # release resources
