@@ -102,8 +102,9 @@ def testNet(i, test_dataset_dir, solver, numTestSamples, auroc = False):
 
 # load mean
 meanHdf = h5py.File(os.path.join(TRAIN_DATASET_DIR, DATASET_MEAN_FILENAME), 'r')
-mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
-mean[...] = meanHdf['mean'][...]
+#mean = np.zeros(meanHdf['mean'][...].shape, meanHdf['mean'][...].dtype)
+#mean[...] = meanHdf['mean'][...]
+mean = np.zeros(meanHdf)
 meanHdf.close()
 
 moving_window = NUM_TRAINING_ITERATIONS / 50
